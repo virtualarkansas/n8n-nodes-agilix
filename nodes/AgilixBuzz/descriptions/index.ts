@@ -1,0 +1,10 @@
+export { userOperations, userFields } from './UserDescription';
+export { courseOperations, courseFields } from './CourseDescription';
+export { enrollmentOperations, enrollmentFields } from './EnrollmentDescription';
+export { domainOperations, domainFields } from './DomainDescription';
+export { authenticationOperations, authenticationFields } from './AuthenticationDescription';
+export { reportOperations, reportFields } from './ReportDescription';
+export { resourceOperations, resourceFields } from './ResourceDescription';
+export { rightOperations, rightFields } from './RightDescription';
+export { generalOperations, generalFields } from './GeneralDescription';
+export { libraryOperations, libraryFields } from './LibraryDescription';

@@ -1,0 +1,42 @@
+{
+	"name": "n8n-nodes-agilix",
+	"version": "0.1.0",
+	"description": "n8n community nodes for Agilix Buzz LMS API",
+	"keywords": [
+		"n8n-community-node-package",
+		"n8n",
+		"agilix",
+		"buzz",
+		"lms"
+	],
+	"license": "MIT",
+	"homepage": "https://github.com/virtualarkansas/n8n-nodes-agilix",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/virtualarkansas/n8n-nodes-agilix.git"
+	},
+	"main": "index.js",
+	"scripts": {
+		"build": "n8n-node build",
+		"dev": "n8n-node dev",
+		"lint": "n8n-node lint",
+		"lint:fix": "n8n-node lint --fix"
+	},
+	"n8n": {
+		"n8nNodesApiVersion": 1,
+		"credentials": [
+			"dist/credentials/AgilixBuzzApi.credentials.js"
+		],
+		"nodes": [
+			"dist/nodes/AgilixBuzz/AgilixBuzz.node.js"
+		]
+	},
+	"devDependencies": {
+		"@n8n/node-cli": "^0.1.0",
+		"n8n-workflow": "*",
+		"typescript": "~5.7.0"
+	},
+	"peerDependencies": {
+		"n8n-workflow": "*"
+	}
+}
