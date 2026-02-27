@@ -1,0 +1,12 @@
+node_modules/
+nodes/
+credentials/
+.git/
+.github/
+*.ts
+!*.d.ts
+*.tsbuildinfo
+*.js.map
+tsconfig.json
+eslint.config.mjs
+.DS_Store
