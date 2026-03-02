@@ -35,6 +35,8 @@ import {
 	gradebookFields,
 	itemOperations,
 	itemFields,
+	submissionOperations,
+	submissionFields,
 } from './descriptions';
 
 export class AgilixBuzz implements INodeType {
@@ -75,6 +77,7 @@ export class AgilixBuzz implements INodeType {
 					{ name: 'Report', value: 'report' },
 					{ name: 'Resource', value: 'resource' },
 					{ name: 'Right', value: 'right' },
+					{ name: 'Submission', value: 'submission' },
 					{ name: 'User', value: 'user' },
 				],
 				default: 'user',
@@ -91,6 +94,7 @@ export class AgilixBuzz implements INodeType {
 			...generalOperations,
 			...gradebookOperations,
 			...itemOperations,
+			...submissionOperations,
 			// Fields
 			...userFields,
 			...courseFields,
@@ -103,6 +107,7 @@ export class AgilixBuzz implements INodeType {
 			...generalFields,
 			...gradebookFields,
 			...itemFields,
+			...submissionFields,
 		],
 	};
 
@@ -138,6 +143,8 @@ export class AgilixBuzz implements INodeType {
 					responseData = await executeGradebook.call(this, operation, i);
 				} else if (resource === 'item') {
 					responseData = await executeItem.call(this, operation, i);
+				} else if (resource === 'submission') {
+					responseData = await executeSubmission.call(this, operation, i);
 				} else {
 					throw new NodeOperationError(this.getNode(), `Unknown resource: ${resource}`, { itemIndex: i });
 				}
@@ -1260,3 +1267,97 @@ async function executeItem(
 	throw new NodeOperationError(this.getNode(), `Unknown item operation: ${operation}`, { itemIndex: i });
 }
 
+async function executeSubmission(
+	this: IExecuteFunctions,
+	operation: string,
+	i: number,
+): Promise<IDataObject | IDataObject[]> {
+	if (operation === 'getStudentSubmission') {
+		const qs: IDataObject = {
+			enrollmentid: this.getNodeParameter('enrollmentid', i) as string,
+			itemid: this.getNodeParameter('itemid', i) as string,
+			packagetype: this.getNodeParameter('packagetype', i) as string,
+			...stripEmpty(getAdditional(this, i)),
+		};
+		if (qs.inline !== undefined) qs.inline = String(qs.inline);
+		const response = await agilixApiRequest.call(this, 'GET', 'getstudentsubmission', {}, qs);
+		return extractResponse(response);
+	}
+
+	if (operation === 'getStudentSubmissionHistory') {
+		const qs: IDataObject = {
+			enrollmentid: this.getNodeParameter('enrollmentid', i) as string,
+			itemid: this.getNodeParameter('itemid', i) as string,
+		};
+		const response = await agilixApiRequest.call(this, 'GET', 'getstudentsubmissionhistory', {}, qs);
+		const resp = response.response as IDataObject;
+		let items = (resp?.submissions as IDataObject)?.submission;
+		if (!items) items = [];
+		if (!Array.isArray(items)) items = [items];
+		return items as IDataObject[];
+	}
+
+	if (operation === 'getStudentSubmissionInfo') {
+		const body: IDataObject = {
+			enrollmentid: this.getNodeParameter('enrollmentid', i) as string,
+			itemid: this.getNodeParameter('itemid', i) as string,
+		};
+		const response = await agilixApiBulkRequest.call(this, 'getstudentsubmissioninfo', [body], 'submission');
+		return extractResponse(response);
+	}
+
+	if (operation === 'putStudentSubmission') {
+		const qs: IDataObject = {
+			enrollmentid: this.getNodeParameter('enrollmentid', i) as string,
+			itemid: this.getNodeParameter('itemid', i) as string,
+		};
+		const recordactivity = this.getNodeParameter('recordactivity', i, false) as boolean;
+		if (recordactivity) qs.recordactivity = 'true';
+		const submissionDataStr = this.getNodeParameter('submissionData', i) as string;
+		let submissionBody: IDataObject;
+		try {
+			submissionBody = JSON.parse(submissionDataStr) as IDataObject;
+		} catch {
+			throw new NodeOperationError(this.getNode(), 'Submission Data must be valid JSON', { itemIndex: i });
+		}
+		const response = await agilixApiRequest.call(this, 'POST', 'putstudentsubmission', submissionBody, qs);
+		const resp = response.response as IDataObject;
+		return (resp?.submission as IDataObject) ?? resp ?? {};
+	}
+
+	if (operation === 'getSubmissionState') {
+		const qs: IDataObject = {
+			enrollmentid: this.getNodeParameter('enrollmentid', i) as string,
+			itemid: this.getNodeParameter('itemid', i) as string,
+			utcoffset: String(this.getNodeParameter('utcoffset', i)),
+		};
+		const createifempty = this.getNodeParameter('createifempty', i, false) as boolean;
+		if (createifempty) qs.createifempty = 'true';
+		const response = await agilixApiRequest.call(this, 'GET', 'getsubmissionstate', {}, qs);
+		const resp = response.response as IDataObject;
+		return (resp?.submissionstate as IDataObject) ?? {};
+	}
+
+	if (operation === 'getAttemptReview') {
+		const qs: IDataObject = {
+			enrollmentid: this.getNodeParameter('enrollmentid', i) as string,
+			itemid: this.getNodeParameter('itemid', i) as string,
+			...stripEmpty(getAdditional(this, i)),
+		};
+		if (qs.forviewing !== undefined) qs.forviewing = String(qs.forviewing);
+		const response = await agilixApiRequest.call(this, 'GET', 'getattemptreview', {}, qs);
+		return extractResponse(response);
+	}
+
+	if (operation === 'getAttempt') {
+		const qs: IDataObject = {
+			enrollmentid: this.getNodeParameter('enrollmentid', i) as string,
+			itemid: this.getNodeParameter('itemid', i) as string,
+			...stripEmpty(getAdditional(this, i)),
+		};
+		const response = await agilixApiRequest.call(this, 'GET', 'getattempt', {}, qs);
+		return extractResponse(response);
+	}
+
+	throw new NodeOperationError(this.getNode(), `Unknown submission operation: ${operation}`, { itemIndex: i });
+}
