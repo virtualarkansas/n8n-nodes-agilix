@@ -10,7 +10,7 @@ import { NodeApiError } from 'n8n-workflow';
 
 declare function setTimeout(callback: () => void, ms: number): unknown;
 
-const USER_AGENT = 'n8n-nodes-agilix/0.2.0';
+const USER_AGENT = 'n8n-nodes-agilix/0.3.0';
 
 // ── Session cache (shared across executions within the same worker) ──────────
 interface SessionInfo {
