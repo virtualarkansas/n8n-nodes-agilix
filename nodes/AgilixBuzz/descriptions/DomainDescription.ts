@@ -91,16 +91,6 @@ export const domainFields: INodeProperties[] = [
 		displayOptions: { show: { resource: ['domain'], operation: ['get'] } },
 	},
 
-	// ── Get Content ───────────────────────────────────────────────────────
-	{
-		displayName: 'Domain ID',
-		name: 'domainid',
-		type: 'string',
-		required: true,
-		default: '',
-		displayOptions: { show: { resource: ['domain'], operation: ['getContent'] } },
-	},
-
 	// ── Get Enrollment Metrics ────────────────────────────────────────────
 	{
 		displayName: 'Domain ID',

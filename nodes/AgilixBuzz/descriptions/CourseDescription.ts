@@ -14,7 +14,6 @@ export const courseOperations: INodeProperties[] = [
 			{ name: 'Deactivate', value: 'deactivate', description: 'Deactivate a course', action: 'Deactivate a course' },
 			{ name: 'Delete', value: 'delete', description: 'Delete a course', action: 'Delete a course' },
 			{ name: 'Get', value: 'get', description: 'Get a course', action: 'Get a course' },
-			{ name: 'Get History', value: 'getHistory', description: 'Get course history', action: 'Get course history' },
 			{ name: 'List', value: 'list', description: 'List courses in a domain', action: 'List courses' },
 			{ name: 'Merge', value: 'merge', description: 'Merge courses', action: 'Merge courses' },
 			{ name: 'Restore', value: 'restore', description: 'Restore a deleted course', action: 'Restore a course' },
@@ -175,16 +174,6 @@ export const courseFields: INodeProperties[] = [
 		],
 	},
 
-	// ── Get History ───────────────────────────────────────────────────────
-	{
-		displayName: 'Course ID',
-		name: 'courseid',
-		type: 'string',
-		required: true,
-		default: '',
-		displayOptions: { show: { resource: ['course'], operation: ['getHistory'] } },
-	},
-
 	// ── List ──────────────────────────────────────────────────────────────
 	{
 		displayName: 'Domain ID',
@@ -224,7 +213,19 @@ export const courseFields: INodeProperties[] = [
 			{ displayName: 'Text Search', name: 'text', type: 'string', default: '' },
 			{ displayName: 'Query', name: 'query', type: 'string', default: '' },
 			{ displayName: 'Subtype', name: 'subtype', type: 'string', default: '' },
-			{ displayName: 'Show', name: 'show', type: 'string', default: '', description: 'Offset for pagination' },
+			{
+				displayName: 'Show',
+				name: 'show',
+				type: 'options',
+				options: [
+					{ name: 'Active', value: 'active' },
+					{ name: 'All', value: 'all' },
+					{ name: 'Current', value: 'current' },
+					{ name: 'Deleted', value: 'deleted' },
+				],
+				default: 'active',
+				description: 'Filter courses by status',
+			},
 		],
 	},
 

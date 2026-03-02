@@ -247,6 +247,19 @@ export const enrollmentFields: INodeProperties[] = [
 			{ displayName: 'Course Domain ID', name: 'coursedomainid', type: 'string', default: '' },
 			{ displayName: 'Course Query', name: 'coursequery', type: 'string', default: '' },
 			{ displayName: 'Course Text', name: 'coursetext', type: 'string', default: '' },
+			{
+				displayName: 'Show',
+				name: 'show',
+				type: 'options',
+				options: [
+					{ name: 'Active', value: 'active' },
+					{ name: 'All', value: 'all' },
+					{ name: 'Current', value: 'current' },
+					{ name: 'Deleted', value: 'deleted' },
+				],
+				default: 'active',
+				description: 'Filter enrollments by status',
+			},
 		],
 	},
 

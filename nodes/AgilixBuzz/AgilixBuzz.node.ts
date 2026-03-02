@@ -10,7 +10,6 @@ import { NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
 import {
 	agilixApiRequest,
 	agilixApiBulkRequest,
-	agilixApiRequestAllItems,
 } from './GenericFunctions';
 
 import {
@@ -32,8 +31,10 @@ import {
 	rightFields,
 	generalOperations,
 	generalFields,
-	libraryOperations,
-	libraryFields,
+	gradebookOperations,
+	gradebookFields,
+	itemOperations,
+	itemFields,
 } from './descriptions';
 
 export class AgilixBuzz implements INodeType {
@@ -69,7 +70,8 @@ export class AgilixBuzz implements INodeType {
 					{ name: 'Domain', value: 'domain' },
 					{ name: 'Enrollment', value: 'enrollment' },
 					{ name: 'General', value: 'general' },
-					{ name: 'Library', value: 'library' },
+					{ name: 'Gradebook', value: 'gradebook' },
+					{ name: 'Item', value: 'item' },
 					{ name: 'Report', value: 'report' },
 					{ name: 'Resource', value: 'resource' },
 					{ name: 'Right', value: 'right' },
@@ -87,7 +89,8 @@ export class AgilixBuzz implements INodeType {
 			...resourceOperations,
 			...rightOperations,
 			...generalOperations,
-			...libraryOperations,
+			...gradebookOperations,
+			...itemOperations,
 			// Fields
 			...userFields,
 			...courseFields,
@@ -98,7 +101,8 @@ export class AgilixBuzz implements INodeType {
 			...resourceFields,
 			...rightFields,
 			...generalFields,
-			...libraryFields,
+			...gradebookFields,
+			...itemFields,
 		],
 	};
 
@@ -130,8 +134,10 @@ export class AgilixBuzz implements INodeType {
 					responseData = await executeRight.call(this, operation, i);
 				} else if (resource === 'general') {
 					responseData = await executeGeneral.call(this, operation, i);
-				} else if (resource === 'library') {
-					responseData = await executeLibrary.call(this, operation, i);
+				} else if (resource === 'gradebook') {
+					responseData = await executeGradebook.call(this, operation, i);
+				} else if (resource === 'item') {
+					responseData = await executeItem.call(this, operation, i);
 				} else {
 					throw new NodeOperationError(this.getNode(), `Unknown resource: ${resource}`, { itemIndex: i });
 				}
@@ -218,6 +224,9 @@ async function executeUser(
 			domainid: this.getNodeParameter('domainid', i) as string,
 			...stripEmpty(getAdditional(this, i)),
 		};
+		for (const p of ['includedescendantdomains', 'byday', 'bymonth', 'byyear']) {
+			if (qs[p] !== undefined) qs[p] = String(qs[p]);
+		}
 		const response = await agilixApiRequest.call(this, 'GET', 'getactiveusercount', {}, qs);
 		return extractResponse(response);
 	}
@@ -259,15 +268,26 @@ async function executeUser(
 
 	if (operation === 'list') {
 		const returnAll = this.getNodeParameter('returnAll', i) as boolean;
+		const additional = stripEmpty(getAdditional(this, i));
 		const qs: IDataObject = {
 			domainid: this.getNodeParameter('domainid', i) as string,
-			...stripEmpty(getAdditional(this, i)),
+			...additional,
 		};
-		if (returnAll) {
-			return await agilixApiRequestAllItems.call(this, 'GET', 'listusers', 'user', {}, qs);
+		// Convert boolean params to strings
+		for (const p of ['includedescendantdomains', 'byday', 'bymonth', 'byyear']) {
+			if (qs[p] !== undefined) qs[p] = String(qs[p]);
 		}
-		const limit = this.getNodeParameter('limit', i) as number;
-		return await agilixApiRequestAllItems.call(this, 'GET', 'listusers', 'user', {}, qs, limit);
+		if (returnAll) {
+			qs.limit = '0';
+		} else {
+			qs.limit = String(this.getNodeParameter('limit', i));
+		}
+		const response = await agilixApiRequest.call(this, 'GET', 'listusers', {}, qs);
+		const resp = response.response as IDataObject;
+		let items = (resp?.users as IDataObject)?.user;
+		if (!items) items = [];
+		if (!Array.isArray(items)) items = [items];
+		return items as IDataObject[];
 	}
 
 	if (operation === 'restore') {
@@ -345,23 +365,24 @@ async function executeCourse(
 		return extractResponse(response);
 	}
 
-	if (operation === 'getHistory') {
-		const qs: IDataObject = { courseid: this.getNodeParameter('courseid', i) as string };
-		const response = await agilixApiRequest.call(this, 'GET', 'getcoursehistory', {}, qs);
-		return extractResponse(response);
-	}
-
 	if (operation === 'list') {
 		const returnAll = this.getNodeParameter('returnAll', i) as boolean;
 		const qs: IDataObject = {
 			domainid: this.getNodeParameter('domainid', i) as string,
 			...stripEmpty(getAdditional(this, i)),
 		};
+		if (qs.includedescendantdomains !== undefined) qs.includedescendantdomains = String(qs.includedescendantdomains);
 		if (returnAll) {
-			return await agilixApiRequestAllItems.call(this, 'GET', 'listcourses', 'course', {}, qs);
+			qs.limit = '0';
+		} else {
+			qs.limit = String(this.getNodeParameter('limit', i));
 		}
-		const limit = this.getNodeParameter('limit', i) as number;
-		return await agilixApiRequestAllItems.call(this, 'GET', 'listcourses', 'course', {}, qs, limit);
+		const response = await agilixApiRequest.call(this, 'GET', 'listcourses', {}, qs);
+		const resp = response.response as IDataObject;
+		let items = (resp?.courses as IDataObject)?.course;
+		if (!items) items = [];
+		if (!Array.isArray(items)) items = [items];
+		return items as IDataObject[];
 	}
 
 	if (operation === 'merge') {
@@ -466,11 +487,18 @@ async function executeEnrollment(
 			domainid: this.getNodeParameter('domainid', i) as string,
 			...stripEmpty(getAdditional(this, i)),
 		};
+		if (qs.includedescendantdomains !== undefined) qs.includedescendantdomains = String(qs.includedescendantdomains);
 		if (returnAll) {
-			return await agilixApiRequestAllItems.call(this, 'GET', 'listenrollments', 'enrollment', {}, qs);
+			qs.limit = '0';
+		} else {
+			qs.limit = String(this.getNodeParameter('limit', i));
 		}
-		const limit = this.getNodeParameter('limit', i) as number;
-		return await agilixApiRequestAllItems.call(this, 'GET', 'listenrollments', 'enrollment', {}, qs, limit);
+		const response = await agilixApiRequest.call(this, 'GET', 'listenrollments', {}, qs);
+		const resp = response.response as IDataObject;
+		let items = (resp?.enrollments as IDataObject)?.enrollment;
+		if (!items) items = [];
+		if (!Array.isArray(items)) items = [items];
+		return items as IDataObject[];
 	}
 
 	if (operation === 'listByTeacher') {
@@ -555,8 +583,7 @@ async function executeDomain(
 	}
 
 	if (operation === 'getContent') {
-		const qs: IDataObject = { domainid: this.getNodeParameter('domainid', i) as string };
-		const response = await agilixApiRequest.call(this, 'GET', 'getdomaincontent', {}, qs);
+		const response = await agilixApiRequest.call(this, 'GET', 'getdomaincontent');
 		return extractResponse(response);
 	}
 
@@ -600,11 +627,18 @@ async function executeDomain(
 			domainid: this.getNodeParameter('domainid', i) as string,
 			...stripEmpty(getAdditional(this, i)),
 		};
+		if (qs.includedescendantdomains !== undefined) qs.includedescendantdomains = String(qs.includedescendantdomains);
 		if (returnAll) {
-			return await agilixApiRequestAllItems.call(this, 'GET', 'listdomains', 'domain', {}, qs);
+			qs.limit = '0';
+		} else {
+			qs.limit = String(this.getNodeParameter('limit', i));
 		}
-		const limit = this.getNodeParameter('limit', i) as number;
-		return await agilixApiRequestAllItems.call(this, 'GET', 'listdomains', 'domain', {}, qs, limit);
+		const response = await agilixApiRequest.call(this, 'GET', 'listdomains', {}, qs);
+		const resp = response.response as IDataObject;
+		let items = (resp?.domains as IDataObject)?.domain;
+		if (!items) items = [];
+		if (!Array.isArray(items)) items = [items];
+		return items as IDataObject[];
 	}
 
 	if (operation === 'restore') {
@@ -631,7 +665,7 @@ async function executeAuthentication(
 	i: number,
 ): Promise<IDataObject | IDataObject[]> {
 	if (operation === 'extendSession') {
-		const response = await agilixApiRequest.call(this, 'GET', 'extendsession');
+		const response = await agilixApiRequest.call(this, 'POST', 'extendsession');
 		return extractResponse(response);
 	}
 
@@ -662,8 +696,8 @@ async function executeAuthentication(
 	}
 
 	if (operation === 'proxy') {
-		const qs: IDataObject = { userid: this.getNodeParameter('userid', i) as string };
-		const response = await agilixApiRequest.call(this, 'GET', 'proxy', {}, qs);
+		const body: IDataObject = { userid: this.getNodeParameter('userid', i) as string };
+		const response = await agilixApiRequest.call(this, 'POST', 'proxy', body);
 		return extractResponse(response);
 	}
 
@@ -682,18 +716,17 @@ async function executeAuthentication(
 	}
 
 	if (operation === 'unproxy') {
-		const qs: IDataObject = { userid: this.getNodeParameter('userid', i) as string };
-		const response = await agilixApiRequest.call(this, 'GET', 'unproxy', {}, qs);
+		const response = await agilixApiRequest.call(this, 'POST', 'unproxy');
 		return extractResponse(response);
 	}
 
 	if (operation === 'updatePassword') {
-		const qs: IDataObject = {
+		const body: IDataObject = {
 			userid: this.getNodeParameter('userid', i) as string,
 			password: this.getNodeParameter('password', i) as string,
 			...stripEmpty(getAdditional(this, i)),
 		};
-		const response = await agilixApiRequest.call(this, 'GET', 'updatepassword', {}, qs);
+		const response = await agilixApiRequest.call(this, 'POST', 'updatepassword', body);
 		return extractResponse(response);
 	}
 
@@ -969,13 +1002,6 @@ async function executeGeneral(
 	operation: string,
 	i: number,
 ): Promise<IDataObject | IDataObject[]> {
-	if (operation === 'echo') {
-		const data = this.getNodeParameter('data', i, '{}') as string;
-		const body = typeof data === 'string' ? JSON.parse(data) : data;
-		const response = await agilixApiRequest.call(this, 'POST', 'echo', body as IDataObject);
-		return extractResponse(response);
-	}
-
 	if (operation === 'getCommandList') {
 		const response = await agilixApiRequest.call(this, 'GET', 'getcommandlist');
 		return extractResponse(response);
@@ -993,59 +1019,244 @@ async function executeGeneral(
 		return extractResponse(response);
 	}
 
-	if (operation === 'getUploadLimits') {
-		const qs: IDataObject = stripEmpty(getAdditional(this, i));
-		const response = await agilixApiRequest.call(this, 'GET', 'getuploadlimits', {}, qs);
-		return extractResponse(response);
-	}
-
 	if (operation === 'sendMail') {
+		const enrollmentid = this.getNodeParameter('enrollmentid', i) as string;
+		const recipientIds = (this.getNodeParameter('recipientEnrollmentIds', i) as string)
+			.split(',')
+			.map((id: string) => ({ id: id.trim() }));
+		const subject = this.getNodeParameter('subject', i) as string;
+		const bodyText = this.getNodeParameter('body', i) as string;
+
+		const qs: IDataObject = { enrollmentid };
 		const body: IDataObject = {
-			subject: this.getNodeParameter('subject', i) as string,
-			body: this.getNodeParameter('body', i) as string,
-			enrollment_ids: this.getNodeParameter('enrollment_ids', i) as string,
+			email: {
+				enrollments: { enrollment: recipientIds },
+				subject: { $value: subject },
+				body: { $value: bodyText },
+			},
 		};
-		const response = await agilixApiRequest.call(this, 'POST', 'sendmail', body);
+		const response = await agilixApiRequest.call(this, 'POST', 'sendmail', body, qs);
 		return extractResponse(response);
 	}
 
 	throw new NodeOperationError(this.getNode(), `Unknown general operation: ${operation}`, { itemIndex: i });
 }
 
-async function executeLibrary(
+async function executeGradebook(
 	this: IExecuteFunctions,
 	operation: string,
 	i: number,
 ): Promise<IDataObject | IDataObject[]> {
-	if (operation === 'createPage') {
-		const body: IDataObject = {
-			domainid: this.getNodeParameter('domainid', i) as string,
-			libraryid: this.getNodeParameter('libraryid', i) as string,
-			title: this.getNodeParameter('title', i) as string,
-			description: this.getNodeParameter('description', i) as string,
+	const boolToString = (qs: IDataObject, keys: string[]) => {
+		for (const k of keys) {
+			if (qs[k] !== undefined) qs[k] = String(qs[k]);
+		}
+	};
+
+	if (operation === 'getEnrollmentGradebook') {
+		const qs: IDataObject = {
+			enrollmentid: this.getNodeParameter('enrollmentid', i) as string,
 			...stripEmpty(getAdditional(this, i)),
 		};
-		const response = await agilixApiRequest.call(this, 'POST', 'createlibrarypage', body);
-		return extractResponse(response);
+		boolToString(qs, ['zerounscored', 'forcerequireditems', 'scorm']);
+		const response = await agilixApiRequest.call(this, 'GET', 'getenrollmentgradebook2', {}, qs);
+		const resp = response.response as IDataObject;
+		return (resp?.enrollment as IDataObject) ?? {};
 	}
 
-	if (operation === 'getPage') {
+	if (operation === 'getEntityGradebook') {
 		const qs: IDataObject = {
-			domainid: this.getNodeParameter('domainid', i) as string,
-			pageid: this.getNodeParameter('pageid', i) as string,
-		};
-		const response = await agilixApiRequest.call(this, 'GET', 'getlibrarypage', {}, qs);
-		return extractResponse(response);
-	}
-
-	if (operation === 'listPages') {
-		const qs: IDataObject = {
-			domainid: this.getNodeParameter('domainid', i) as string,
+			entityid: this.getNodeParameter('entityid', i) as string,
 			...stripEmpty(getAdditional(this, i)),
 		};
-		const response = await agilixApiRequest.call(this, 'GET', 'listlibrarypages', {}, qs);
-		return extractResponse(response);
+		boolToString(qs, ['allstatus', 'zerounscored', 'forcerequireditems', 'scorm']);
+		const response = await agilixApiRequest.call(this, 'GET', 'getentitygradebook3', {}, qs);
+		const resp = response.response as IDataObject;
+		let items = (resp?.enrollments as IDataObject)?.enrollment;
+		if (!items) items = [];
+		if (!Array.isArray(items)) items = [items];
+		return items as IDataObject[];
 	}
 
-	throw new NodeOperationError(this.getNode(), `Unknown library operation: ${operation}`, { itemIndex: i });
+	if (operation === 'getUserGradebook') {
+		const qs: IDataObject = {
+			userid: this.getNodeParameter('userid', i) as string,
+			...stripEmpty(getAdditional(this, i)),
+		};
+		boolToString(qs, ['allstatus', 'zerounscored', 'forcerequireditems', 'scorm']);
+		const response = await agilixApiRequest.call(this, 'GET', 'getusergradebook2', {}, qs);
+		const resp = response.response as IDataObject;
+		let items = (resp?.enrollments as IDataObject)?.enrollment;
+		if (!items) items = [];
+		if (!Array.isArray(items)) items = [items];
+		return items as IDataObject[];
+	}
+
+	if (operation === 'getGrade') {
+		const qs: IDataObject = {
+			enrollmentid: this.getNodeParameter('enrollmentid', i) as string,
+			itemid: this.getNodeParameter('itemid', i) as string,
+		};
+		const response = await agilixApiRequest.call(this, 'GET', 'getgrade', {}, qs);
+		const resp = response.response as IDataObject;
+		return (resp?.grade as IDataObject) ?? {};
+	}
+
+	if (operation === 'getGradeHistory') {
+		const qs: IDataObject = {
+			enrollmentid: this.getNodeParameter('enrollmentid', i) as string,
+			itemid: this.getNodeParameter('itemid', i) as string,
+		};
+		const response = await agilixApiRequest.call(this, 'GET', 'getgradehistory', {}, qs);
+		const resp = response.response as IDataObject;
+		let items = (resp?.grades as IDataObject)?.grade;
+		if (!items) items = [];
+		if (!Array.isArray(items)) items = [items];
+		return items as IDataObject[];
+	}
+
+	if (operation === 'getGradebookList') {
+		const qs: IDataObject = stripEmpty(getAdditional(this, i));
+		const response = await agilixApiRequest.call(this, 'GET', 'getgradebooklist', {}, qs);
+		const resp = response.response as IDataObject;
+		let items = (resp?.gradebooks as IDataObject)?.gradebook;
+		if (!items) items = [];
+		if (!Array.isArray(items)) items = [items];
+		return items as IDataObject[];
+	}
+
+	if (operation === 'getGradebookWeights') {
+		const qs: IDataObject = {
+			entityid: this.getNodeParameter('entityid', i) as string,
+		};
+		const periodid = this.getNodeParameter('periodid', i, '') as string;
+		if (periodid) qs.periodid = periodid;
+		const response = await agilixApiRequest.call(this, 'GET', 'getgradebookweights', {}, qs);
+		const resp = response.response as IDataObject;
+		return (resp?.weights as IDataObject) ?? {};
+	}
+
+	if (operation === 'getGradebookSummary') {
+		const qs: IDataObject = {
+			entityid: this.getNodeParameter('entityid', i) as string,
+			...stripEmpty(getAdditional(this, i)),
+		};
+		boolToString(qs, ['allstatus', 'zerounscored', 'forcerequireditems']);
+		const response = await agilixApiRequest.call(this, 'GET', 'getentitygradebooksummary', {}, qs);
+		const resp = response.response as IDataObject;
+		return (resp?.summary as IDataObject) ?? {};
+	}
+
+	throw new NodeOperationError(this.getNode(), `Unknown gradebook operation: ${operation}`, { itemIndex: i });
 }
+
+async function executeItem(
+	this: IExecuteFunctions,
+	operation: string,
+	i: number,
+): Promise<IDataObject | IDataObject[]> {
+	if (operation === 'list') {
+		const qs: IDataObject = {
+			entityid: this.getNodeParameter('entityid', i) as string,
+			...stripEmpty(getAdditional(this, i)),
+		};
+		if (qs.allversions !== undefined) qs.allversions = String(qs.allversions);
+		const response = await agilixApiRequest.call(this, 'GET', 'getitemlist', {}, qs);
+		const resp = response.response as IDataObject;
+		let items = (resp?.items as IDataObject)?.item;
+		if (!items) items = [];
+		if (!Array.isArray(items)) items = [items];
+		return items as IDataObject[];
+	}
+
+	if (operation === 'get') {
+		const qs: IDataObject = {
+			entityid: this.getNodeParameter('entityid', i) as string,
+			itemid: this.getNodeParameter('itemid', i) as string,
+			...stripEmpty(getAdditional(this, i)),
+		};
+		if (qs.embedmaster !== undefined) qs.embedmaster = String(qs.embedmaster);
+		const response = await agilixApiRequest.call(this, 'GET', 'getitem', {}, qs);
+		const resp = response.response as IDataObject;
+		return (resp?.item as IDataObject) ?? {};
+	}
+
+	if (operation === 'getInfo') {
+		const body: IDataObject = {
+			entityid: this.getNodeParameter('entityid', i) as string,
+			itemid: this.getNodeParameter('itemid', i) as string,
+		};
+		const response = await agilixApiBulkRequest.call(this, 'getiteminfo', [body], 'item');
+		return extractResponse(response);
+	}
+
+	if (operation === 'create') {
+		const body: IDataObject = {
+			entityid: this.getNodeParameter('entityid', i) as string,
+			itemid: this.getNodeParameter('itemid', i) as string,
+			...stripEmpty(getAdditional(this, i)),
+		};
+		const response = await agilixApiBulkRequest.call(this, 'putitems', [body], 'item');
+		return extractResponse(response);
+	}
+
+	if (operation === 'delete') {
+		const body: IDataObject = {
+			entityid: this.getNodeParameter('entityid', i) as string,
+			itemid: this.getNodeParameter('itemid', i) as string,
+		};
+		const cascade = this.getNodeParameter('cascade', i, false) as boolean;
+		const queryParams: IDataObject = {};
+		if (cascade) queryParams.cascade = 'true';
+		const response = await agilixApiBulkRequest.call(this, 'deleteitems', [body], 'item', queryParams);
+		return extractResponse(response);
+	}
+
+	if (operation === 'restore') {
+		const body: IDataObject = {
+			entityid: this.getNodeParameter('entityid', i) as string,
+			itemid: this.getNodeParameter('itemid', i) as string,
+		};
+		const version = this.getNodeParameter('version', i, 0) as number;
+		if (version) body.version = String(version);
+		const response = await agilixApiBulkRequest.call(this, 'restoreitems', [body], 'item');
+		return extractResponse(response);
+	}
+
+	if (operation === 'copy') {
+		const body: IDataObject = {
+			sourceentityid: this.getNodeParameter('sourceentityid', i) as string,
+			sourceitemid: this.getNodeParameter('sourceitemid', i) as string,
+			destinationentityid: this.getNodeParameter('destinationentityid', i) as string,
+			destinationitemid: this.getNodeParameter('destinationitemid', i) as string,
+		};
+		const deep = this.getNodeParameter('deep', i, false) as boolean;
+		if (deep) body.deep = 'true';
+		const response = await agilixApiBulkRequest.call(this, 'copyitems', [body], 'item');
+		return extractResponse(response);
+	}
+
+	if (operation === 'assign') {
+		const qs: IDataObject = {
+			entityid: this.getNodeParameter('entityid', i) as string,
+			itemid: this.getNodeParameter('itemid', i) as string,
+			folderid: this.getNodeParameter('folderid', i) as string,
+		};
+		const sequence = this.getNodeParameter('sequence', i, 0) as number;
+		if (sequence) qs.sequence = String(sequence);
+		const response = await agilixApiRequest.call(this, 'POST', 'assignitem', {}, qs);
+		return extractResponse(response);
+	}
+
+	if (operation === 'unassign') {
+		const qs: IDataObject = {
+			entityid: this.getNodeParameter('entityid', i) as string,
+			itemid: this.getNodeParameter('itemid', i) as string,
+		};
+		const response = await agilixApiRequest.call(this, 'POST', 'unassignitem', {}, qs);
+		return extractResponse(response);
+	}
+
+	throw new NodeOperationError(this.getNode(), `Unknown item operation: ${operation}`, { itemIndex: i });
+}
+
