@@ -131,14 +131,29 @@ async function getToken(
 	return { token: session.token, baseUrl };
 }
 
-// ── Rate-limit aware request helper ──────────────────────────────────────────
+// ── Rate-limit & time-limit aware request helper ─────────────────────────────
 const MAX_RETRIES = 5;
 const INITIAL_BACKOFF_MS = 1000;
+const MAX_TIME_LIMIT_WAIT_MS = 180_000; // 3 min max wait for time-limiting
 
 async function sleep(ms: number): Promise<void> {
 	return new Promise<void>((resolve) => {
 		setTimeout(resolve, ms);
 	});
+}
+
+/**
+ * Parse the retry delay from an Agilix TimeLimit response message.
+ * Message format: "The API time has been limited for {userId}. You are {ms}ms over your limit."
+ * Returns the number of milliseconds to wait before retrying.
+ */
+function parseTimeLimitDelay(message: string | undefined): number {
+	if (!message) return 30_000; // default 30s if we can't parse
+	const match = String(message).match(/(\d+)ms over your limit/);
+	if (match) {
+		return parseInt(match[1], 10) + 2000; // add 2s buffer
+	}
+	return 30_000;
 }
 
 export async function agilixApiRequest(
@@ -187,6 +202,18 @@ export async function agilixApiRequest(
 				}
 			}
 
+			// Handle time limiting (API processing budget exceeded)
+			if (resp?.code === 'TimeLimit') {
+				const retryDelay = parseTimeLimitDelay(resp.message as string);
+				if (attempt < MAX_RETRIES && retryDelay <= MAX_TIME_LIMIT_WAIT_MS) {
+					await sleep(retryDelay);
+					continue;
+				}
+				throw new NodeApiError(this.getNode(), parsed as JsonObject, {
+					message: `Agilix API time limit exceeded (need to wait ~${Math.ceil(retryDelay / 1000)}s). ${resp.message || 'Please try again later.'}`,
+				});
+			}
+
 			// Handle rate limiting (HTTP 429 or Buzz-specific throttle)
 			if (resp?.code === 'TooManyRequests' || resp?.code === 'Throttled') {
 				if (attempt < MAX_RETRIES) {
@@ -212,7 +239,21 @@ export async function agilixApiRequest(
 				(error as NodeApiError).httpCode &&
 				[429, 500, 502, 503, 504].includes(Number((error as NodeApiError).httpCode))
 			) {
-				const backoff = INITIAL_BACKOFF_MS * Math.pow(2, attempt);
+				let backoff = INITIAL_BACKOFF_MS * Math.pow(2, attempt);
+
+				// For HTTP 429, try to parse TimeLimit delay from the error message
+				if (Number((error as NodeApiError).httpCode) === 429) {
+					const errMsg = String((error as Error).message || '');
+					const timeLimitMatch = errMsg.match(/(\d+)ms over your limit/);
+					if (timeLimitMatch) {
+						const parsedDelay = parseInt(timeLimitMatch[1], 10) + 2000;
+						if (parsedDelay > MAX_TIME_LIMIT_WAIT_MS) {
+							throw error; // Wait too long, fail fast with clear message
+						}
+						backoff = parsedDelay;
+					}
+				}
+
 				await sleep(backoff);
 				continue;
 			}
@@ -260,6 +301,18 @@ export async function agilixApiBulkRequest(
 
 			const resp = parsed?.response;
 
+			// Handle time limiting (API processing budget exceeded)
+			if (resp?.code === 'TimeLimit') {
+				const retryDelay = parseTimeLimitDelay(resp.message as string);
+				if (attempt < MAX_RETRIES && retryDelay <= MAX_TIME_LIMIT_WAIT_MS) {
+					await sleep(retryDelay);
+					continue;
+				}
+				throw new NodeApiError(this.getNode(), parsed as JsonObject, {
+					message: `Agilix API time limit exceeded (need to wait ~${Math.ceil(retryDelay / 1000)}s). ${resp.message || 'Please try again later.'}`,
+				});
+			}
+
 			if (resp?.code === 'TooManyRequests' || resp?.code === 'Throttled') {
 				if (attempt < MAX_RETRIES) {
 					await sleep(INITIAL_BACKOFF_MS * Math.pow(2, attempt));
@@ -298,7 +351,22 @@ export async function agilixApiBulkRequest(
 				(error as NodeApiError).httpCode &&
 				[429, 500, 502, 503, 504].includes(Number((error as NodeApiError).httpCode))
 			) {
-				await sleep(INITIAL_BACKOFF_MS * Math.pow(2, attempt));
+				let backoff = INITIAL_BACKOFF_MS * Math.pow(2, attempt);
+
+				// For HTTP 429, try to parse TimeLimit delay from the error message
+				if (Number((error as NodeApiError).httpCode) === 429) {
+					const errMsg = String((error as Error).message || '');
+					const timeLimitMatch = errMsg.match(/(\d+)ms over your limit/);
+					if (timeLimitMatch) {
+						const parsedDelay = parseInt(timeLimitMatch[1], 10) + 2000;
+						if (parsedDelay > MAX_TIME_LIMIT_WAIT_MS) {
+							throw error;
+						}
+						backoff = parsedDelay;
+					}
+				}
+
+				await sleep(backoff);
 				continue;
 			}
 
