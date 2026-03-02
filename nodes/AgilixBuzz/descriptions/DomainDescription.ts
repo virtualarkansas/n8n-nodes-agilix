@@ -46,7 +46,8 @@ export const domainFields: INodeProperties[] = [
 	{
 		displayName: 'Parent ID',
 		name: 'parentid',
-		type: 'string',
+		type: 'options',
+		typeOptions: { loadOptionsMethod: 'getDomains' },
 		required: true,
 		default: '',
 		displayOptions: { show: { resource: ['domain'], operation: ['create'] } },
@@ -68,7 +69,8 @@ export const domainFields: INodeProperties[] = [
 	{
 		displayName: 'Domain ID',
 		name: 'domainid',
-		type: 'string',
+		type: 'options',
+		typeOptions: { loadOptionsMethod: 'getDomains' },
 		required: true,
 		default: '',
 		displayOptions: { show: { resource: ['domain'], operation: ['delete'] } },
@@ -78,7 +80,8 @@ export const domainFields: INodeProperties[] = [
 	{
 		displayName: 'Domain ID',
 		name: 'domainid',
-		type: 'string',
+		type: 'options',
+		typeOptions: { loadOptionsMethod: 'getDomains' },
 		required: true,
 		default: '',
 		displayOptions: { show: { resource: ['domain'], operation: ['get'] } },
@@ -95,7 +98,8 @@ export const domainFields: INodeProperties[] = [
 	{
 		displayName: 'Domain ID',
 		name: 'domainid',
-		type: 'string',
+		type: 'options',
+		typeOptions: { loadOptionsMethod: 'getDomains' },
 		required: true,
 		default: '',
 		displayOptions: { show: { resource: ['domain'], operation: ['getEnrollmentMetrics'] } },
@@ -112,7 +116,8 @@ export const domainFields: INodeProperties[] = [
 	{
 		displayName: 'Domain ID',
 		name: 'domainid',
-		type: 'string',
+		type: 'options',
+		typeOptions: { loadOptionsMethod: 'getDomains' },
 		required: true,
 		default: '',
 		displayOptions: { show: { resource: ['domain'], operation: ['getParentList'] } },
@@ -122,7 +127,8 @@ export const domainFields: INodeProperties[] = [
 	{
 		displayName: 'Domain ID',
 		name: 'domainid',
-		type: 'string',
+		type: 'options',
+		typeOptions: { loadOptionsMethod: 'getDomains' },
 		required: true,
 		default: '',
 		displayOptions: { show: { resource: ['domain'], operation: ['getSettings'] } },
@@ -148,7 +154,8 @@ export const domainFields: INodeProperties[] = [
 	{
 		displayName: 'Domain ID',
 		name: 'domainid',
-		type: 'string',
+		type: 'options',
+		typeOptions: { loadOptionsMethod: 'getDomains' },
 		required: true,
 		default: '',
 		displayOptions: { show: { resource: ['domain'], operation: ['getStats'] } },
@@ -167,11 +174,12 @@ export const domainFields: INodeProperties[] = [
 	{
 		displayName: 'Domain ID',
 		name: 'domainid',
-		type: 'string',
+		type: 'options',
+		typeOptions: { loadOptionsMethod: 'getDomains' },
 		required: true,
-		default: '0',
+		default: '',
 		displayOptions: { show: { resource: ['domain'], operation: ['list'] } },
-		description: 'Parent domain ID (0 for root)',
+		description: 'Parent domain ID to list children of',
 	},
 	{
 		displayName: 'Return All',
@@ -209,7 +217,8 @@ export const domainFields: INodeProperties[] = [
 	{
 		displayName: 'Domain ID',
 		name: 'domainid',
-		type: 'string',
+		type: 'options',
+		typeOptions: { loadOptionsMethod: 'getDomains' },
 		required: true,
 		default: '',
 		displayOptions: { show: { resource: ['domain'], operation: ['restore'] } },
@@ -219,7 +228,8 @@ export const domainFields: INodeProperties[] = [
 	{
 		displayName: 'Domain ID',
 		name: 'domainid',
-		type: 'string',
+		type: 'options',
+		typeOptions: { loadOptionsMethod: 'getDomains' },
 		required: true,
 		default: '',
 		displayOptions: { show: { resource: ['domain'], operation: ['update'] } },

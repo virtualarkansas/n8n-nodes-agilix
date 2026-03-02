@@ -16,6 +16,7 @@ const USER_AGENT = 'n8n-nodes-agilix/0.2.0';
 interface SessionInfo {
 	token: string;
 	expiration: number; // unix ms
+	domainId: string;
 }
 
 const sessionCache = new Map<string, SessionInfo>();
@@ -71,10 +72,12 @@ async function login(
 	}
 
 	const expirationMinutes = parseInt(resp.user?.authenticationexpirationminutes as string, 10) || 60;
+	const domainId = (resp.user?.domainid as string) || '';
 
 	const session: SessionInfo = {
 		token,
 		expiration: Date.now() + expirationMinutes * 60 * 1000,
+		domainId,
 	};
 
 	sessionCache.set(cacheKey(baseUrl, domain, username), session);
@@ -146,6 +149,16 @@ function invalidateSession(ctx: IExecuteFunctions | ILoadOptionsFunctions): void
 		const key = cacheKey(bUrl, creds.domain as string, creds.username as string);
 		sessionCache.delete(key);
 	}).catch(() => {});
+}
+
+export async function getSessionDomainId(
+	ctx: IExecuteFunctions | ILoadOptionsFunctions,
+): Promise<string> {
+	await getToken(ctx);
+	const creds = await ctx.getCredentials('agilixBuzzApi');
+	const bUrl = ((creds.baseUrl as string) || 'https://api.agilixbuzz.com').replace(/\/+$/, '');
+	const key = cacheKey(bUrl, creds.domain as string, creds.username as string);
+	return sessionCache.get(key)?.domainId || '';
 }
 
 // ── Rate-limit & time-limit aware request helper ─────────────────────────────

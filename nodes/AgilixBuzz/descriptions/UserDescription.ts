@@ -29,7 +29,8 @@ export const userFields: INodeProperties[] = [
 	{
 		displayName: 'Domain ID',
 		name: 'domainid',
-		type: 'string',
+		type: 'options',
+		typeOptions: { loadOptionsMethod: 'getDomains' },
 		required: true,
 		default: '',
 		displayOptions: { show: { resource: ['user'], operation: ['create'] } },
@@ -125,7 +126,8 @@ export const userFields: INodeProperties[] = [
 	{
 		displayName: 'Domain ID',
 		name: 'domainid',
-		type: 'string',
+		type: 'options',
+		typeOptions: { loadOptionsMethod: 'getDomains' },
 		required: true,
 		default: '',
 		displayOptions: { show: { resource: ['user'], operation: ['getActiveCount'] } },
@@ -198,7 +200,8 @@ export const userFields: INodeProperties[] = [
 	{
 		displayName: 'Domain ID',
 		name: 'domainid',
-		type: 'string',
+		type: 'options',
+		typeOptions: { loadOptionsMethod: 'getDomains' },
 		required: true,
 		default: '',
 		displayOptions: { show: { resource: ['user'], operation: ['getDomainActivity'] } },
@@ -240,7 +243,8 @@ export const userFields: INodeProperties[] = [
 	{
 		displayName: 'Domain ID',
 		name: 'domainid',
-		type: 'string',
+		type: 'options',
+		typeOptions: { loadOptionsMethod: 'getDomains' },
 		required: true,
 		default: '',
 		displayOptions: { show: { resource: ['user'], operation: ['list'] } },

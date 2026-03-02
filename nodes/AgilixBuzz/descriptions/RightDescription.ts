@@ -34,7 +34,8 @@ export const rightFields: INodeProperties[] = [
 	{
 		displayName: 'Domain ID',
 		name: 'domainid',
-		type: 'string',
+		type: 'options',
+		typeOptions: { loadOptionsMethod: 'getDomains' },
 		required: true,
 		default: '',
 		displayOptions: { show: { resource: ['right'], operation: ['createRole'] } },
@@ -220,7 +221,8 @@ export const rightFields: INodeProperties[] = [
 	{
 		displayName: 'Domain ID',
 		name: 'domainid',
-		type: 'string',
+		type: 'options',
+		typeOptions: { loadOptionsMethod: 'getDomains' },
 		required: true,
 		default: '',
 		displayOptions: { show: { resource: ['right'], operation: ['listRoles'] } },

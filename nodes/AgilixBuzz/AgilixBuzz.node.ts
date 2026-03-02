@@ -1,7 +1,9 @@
 import type {
 	IExecuteFunctions,
+	ILoadOptionsFunctions,
 	IDataObject,
 	INodeExecutionData,
+	INodePropertyOptions,
 	INodeType,
 	INodeTypeDescription,
 } from 'n8n-workflow';
@@ -11,6 +13,7 @@ import {
 	agilixApiRequest,
 	agilixApiBulkRequest,
 	agilixApiRequestBinary,
+	getSessionDomainId,
 } from './GenericFunctions';
 
 import {
@@ -110,6 +113,56 @@ export class AgilixBuzz implements INodeType {
 			...itemFields,
 			...submissionFields,
 		],
+	};
+
+	methods = {
+		loadOptions: {
+			async getDomains(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
+				try {
+					const domainId = await getSessionDomainId(this);
+					if (!domainId) return [];
+
+					// Get the user's own domain info
+					const selfResp = await agilixApiRequest.call(this, 'GET', 'getdomain2', {}, { domainid: domainId });
+					const selfDomain = (selfResp.response as IDataObject)?.domain as IDataObject | undefined;
+
+					// List child domains (with descendants)
+					const response = await agilixApiRequest.call(this, 'GET', 'listdomains', {}, {
+						domainid: domainId,
+						limit: '0',
+						includedescendantdomains: 'true',
+					});
+					const resp = response.response as IDataObject;
+					let domains = (resp?.domains as IDataObject)?.domain;
+					if (!domains) domains = [];
+					if (!Array.isArray(domains)) domains = [domains];
+
+					const options: INodePropertyOptions[] = [];
+
+					// Add the user's own domain first
+					if (selfDomain) {
+						options.push({
+							name: `${selfDomain.name} (${selfDomain.id})`,
+							value: selfDomain.id as string,
+						});
+					}
+
+					// Add child domains
+					for (const d of domains as IDataObject[]) {
+						const id = d.id as string;
+						if (id === domainId) continue; // skip if already added
+						options.push({
+							name: `${d.name} (${id})`,
+							value: id,
+						});
+					}
+
+					return options;
+				} catch {
+					return [];
+				}
+			},
+		},
 	};
 
 	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {

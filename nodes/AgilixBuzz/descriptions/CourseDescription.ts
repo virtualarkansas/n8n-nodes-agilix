@@ -36,7 +36,8 @@ export const courseFields: INodeProperties[] = [
 	{
 		displayName: 'Destination Domain ID',
 		name: 'domainid',
-		type: 'string',
+		type: 'options',
+		typeOptions: { loadOptionsMethod: 'getDomains' },
 		required: true,
 		default: '',
 		displayOptions: { show: { resource: ['course'], operation: ['copy'] } },
@@ -75,7 +76,8 @@ export const courseFields: INodeProperties[] = [
 	{
 		displayName: 'Domain ID',
 		name: 'domainid',
-		type: 'string',
+		type: 'options',
+		typeOptions: { loadOptionsMethod: 'getDomains' },
 		required: true,
 		default: '',
 		displayOptions: { show: { resource: ['course'], operation: ['create'] } },
@@ -112,7 +114,8 @@ export const courseFields: INodeProperties[] = [
 	{
 		displayName: 'Domain ID',
 		name: 'domainid',
-		type: 'string',
+		type: 'options',
+		typeOptions: { loadOptionsMethod: 'getDomains' },
 		required: true,
 		default: '',
 		displayOptions: { show: { resource: ['course'], operation: ['createDemo'] } },
@@ -178,7 +181,8 @@ export const courseFields: INodeProperties[] = [
 	{
 		displayName: 'Domain ID',
 		name: 'domainid',
-		type: 'string',
+		type: 'options',
+		typeOptions: { loadOptionsMethod: 'getDomains' },
 		required: true,
 		default: '',
 		displayOptions: { show: { resource: ['course'], operation: ['list'] } },
