@@ -365,3 +365,100 @@ export async function agilixApiBulkRequest(
 
 	throw lastError ?? new Error('Max retries exceeded');
 }
+
+// ── Binary request helper (for file/zip downloads) ───────────────────────────
+export async function agilixApiRequestBinary(
+	this: IExecuteFunctions | ILoadOptionsFunctions,
+	cmd: string,
+	qs: IDataObject = {},
+): Promise<{ body: Buffer; contentType: string; fileName: string }> {
+	let lastError: Error | undefined;
+
+	for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+		const { token, baseUrl } = await getToken(this);
+
+		const options: IRequestOptions = {
+			method: 'GET' as IHttpRequestMethods,
+			uri: `${baseUrl}/cmd`,
+			qs: { cmd, _token: token, ...qs },
+			encoding: null,
+			resolveWithFullResponse: true,
+			json: false,
+			headers: {
+				'User-Agent': USER_AGENT,
+			},
+		};
+
+		try {
+			const response = await this.helpers.request(options);
+			const headers = response.headers || {};
+			const contentType = (headers['content-type'] as string) || 'application/octet-stream';
+
+			// If JSON came back, the API returned an error instead of binary data
+			if (contentType.includes('application/json')) {
+				const parsed = JSON.parse(response.body.toString());
+				const resp = parsed?.response;
+
+				if (resp?.code === 'AccessDenied' || resp?.code === 'NotAuthenticated') {
+					invalidateSession(this);
+					if (attempt < MAX_RETRIES) {
+						await sleep(INITIAL_BACKOFF_MS * Math.pow(2, attempt));
+						continue;
+					}
+				}
+
+				if (resp?.code === 'TimeLimit') {
+					const retryDelay = parseTimeLimitDelay(resp.message as string);
+					if (attempt < MAX_RETRIES && retryDelay <= MAX_TIME_LIMIT_WAIT_MS) {
+						await sleep(retryDelay);
+						continue;
+					}
+				}
+
+				if (resp?.code === 'TooManyRequests' || resp?.code === 'Throttled') {
+					if (attempt < MAX_RETRIES) {
+						await sleep(INITIAL_BACKOFF_MS * Math.pow(2, attempt));
+						continue;
+					}
+				}
+
+				if (resp && resp.code !== 'OK') {
+					throw new NodeApiError(this.getNode(), parsed as JsonObject, {
+						message: `Agilix API error: ${resp.code} - ${resp.message || ''}`,
+					});
+				}
+			}
+
+			// Parse filename from Content-Disposition header
+			const disposition = (headers['content-disposition'] as string) || '';
+			let fileName = 'submission';
+			const filenameMatch = disposition.match(/filename[*]?=(?:UTF-8''|"?)([^";]+)/i);
+			if (filenameMatch) {
+				fileName = decodeURIComponent(filenameMatch[1].replace(/"/g, ''));
+			} else if (qs.packagetype === 'zip') {
+				fileName = 'submission.zip';
+			}
+
+			const body = Buffer.isBuffer(response.body)
+				? response.body
+				: Buffer.from(response.body);
+
+			return { body, contentType, fileName };
+		} catch (error) {
+			lastError = error as Error;
+
+			if (
+				attempt < MAX_RETRIES &&
+				(error as NodeApiError).httpCode &&
+				[429, 500, 502, 503, 504].includes(Number((error as NodeApiError).httpCode))
+			) {
+				await sleep(INITIAL_BACKOFF_MS * Math.pow(2, attempt));
+				continue;
+			}
+
+			throw error;
+		}
+	}
+
+	throw lastError ?? new Error('Max retries exceeded');
+}

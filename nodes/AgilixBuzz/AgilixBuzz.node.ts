@@ -10,6 +10,7 @@ import { NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
 import {
 	agilixApiRequest,
 	agilixApiBulkRequest,
+	agilixApiRequestBinary,
 } from './GenericFunctions';
 
 import {
@@ -144,6 +145,30 @@ export class AgilixBuzz implements INodeType {
 				} else if (resource === 'item') {
 					responseData = await executeItem.call(this, operation, i);
 				} else if (resource === 'submission') {
+					const packagetype = operation === 'getStudentSubmission'
+						? (this.getNodeParameter('packagetype', i) as string)
+						: '';
+					if (operation === 'getStudentSubmission' && packagetype !== 'data') {
+						// Binary download (file or zip)
+						const qs: IDataObject = {
+							enrollmentid: this.getNodeParameter('enrollmentid', i) as string,
+							itemid: this.getNodeParameter('itemid', i) as string,
+							packagetype,
+							...stripEmpty(getAdditional(this, i)),
+						};
+						if (qs.inline !== undefined) qs.inline = String(qs.inline);
+						const binaryPropertyName = this.getNodeParameter('binaryPropertyName', i, 'data') as string;
+						const { body, contentType, fileName } = await agilixApiRequestBinary.call(
+							this, 'getstudentsubmission', qs,
+						);
+						const binaryData = await this.helpers.prepareBinaryData(body, fileName, contentType);
+						returnData.push({
+							json: { fileName, mimeType: contentType, fileSize: body.length },
+							binary: { [binaryPropertyName]: binaryData },
+							pairedItem: { item: i },
+						});
+						continue;
+					}
 					responseData = await executeSubmission.call(this, operation, i);
 				} else {
 					throw new NodeOperationError(this.getNode(), `Unknown resource: ${resource}`, { itemIndex: i });

@@ -52,6 +52,14 @@ export const submissionFields: INodeProperties[] = [
 		],
 	},
 	{
+		displayName: 'Binary Property',
+		name: 'binaryPropertyName',
+		type: 'string',
+		default: 'data',
+		displayOptions: { show: { resource: ['submission'], operation: ['getStudentSubmission'], packagetype: ['file', 'zip'] } },
+		description: 'Name of the binary property to write the downloaded file to',
+	},
+	{
 		displayName: 'Additional Fields',
 		name: 'additionalFields',
 		type: 'collection',
