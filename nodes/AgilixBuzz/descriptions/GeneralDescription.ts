@@ -8,28 +8,16 @@ export const generalOperations: INodeProperties[] = [
 		noDataExpression: true,
 		displayOptions: { show: { resource: ['general'] } },
 		options: [
-			{ name: 'Echo', value: 'echo', description: 'Echo test (connectivity check)', action: 'Echo test' },
 			{ name: 'Get Command List', value: 'getCommandList', description: 'Get all available API commands', action: 'Get command list' },
 			{ name: 'Get Entity Type', value: 'getEntityType', description: 'Get entity type for an ID', action: 'Get entity type' },
 			{ name: 'Get Status', value: 'getStatus', description: 'Get API status', action: 'Get API status' },
-			{ name: 'Get Upload Limits', value: 'getUploadLimits', description: 'Get upload limits', action: 'Get upload limits' },
-			{ name: 'Send Mail', value: 'sendMail', description: 'Send email to enrollment', action: 'Send mail' },
+			{ name: 'Send Mail', value: 'sendMail', description: 'Send email to enrollments', action: 'Send mail' },
 		],
 		default: 'getStatus',
 	},
 ];
 
 export const generalFields: INodeProperties[] = [
-	// ── Echo ──────────────────────────────────────────────────────────────
-	{
-		displayName: 'Data',
-		name: 'data',
-		type: 'json',
-		default: '{}',
-		displayOptions: { show: { resource: ['general'], operation: ['echo'] } },
-		description: 'JSON data to echo back',
-	},
-
 	// ── Get Entity Type ───────────────────────────────────────────────────
 	{
 		displayName: 'Entity ID',
@@ -53,21 +41,25 @@ export const generalFields: INodeProperties[] = [
 		],
 	},
 
-	// ── Get Upload Limits ─────────────────────────────────────────────────
-	{
-		displayName: 'Additional Fields',
-		name: 'additionalFields',
-		type: 'collection',
-		placeholder: 'Add Field',
-		default: {},
-		displayOptions: { show: { resource: ['general'], operation: ['getUploadLimits'] } },
-		options: [
-			{ displayName: 'User ID', name: 'userid', type: 'string', default: '' },
-			{ displayName: 'Domain ID', name: 'domainid', type: 'string', default: '' },
-		],
-	},
-
 	// ── Send Mail ─────────────────────────────────────────────────────────
+	{
+		displayName: 'Sender Enrollment ID',
+		name: 'enrollmentid',
+		type: 'string',
+		required: true,
+		default: '',
+		displayOptions: { show: { resource: ['general'], operation: ['sendMail'] } },
+		description: "The sender's enrollment ID (passed as query param)",
+	},
+	{
+		displayName: 'Recipient Enrollment IDs',
+		name: 'recipientEnrollmentIds',
+		type: 'string',
+		required: true,
+		default: '',
+		displayOptions: { show: { resource: ['general'], operation: ['sendMail'] } },
+		description: 'Comma-separated list of recipient enrollment IDs',
+	},
 	{
 		displayName: 'Subject',
 		name: 'subject',
@@ -84,14 +76,5 @@ export const generalFields: INodeProperties[] = [
 		required: true,
 		default: '',
 		displayOptions: { show: { resource: ['general'], operation: ['sendMail'] } },
-	},
-	{
-		displayName: 'Enrollment IDs',
-		name: 'enrollment_ids',
-		type: 'string',
-		required: true,
-		default: '',
-		displayOptions: { show: { resource: ['general'], operation: ['sendMail'] } },
-		description: 'Comma-separated enrollment IDs',
 	},
 ];

@@ -10,15 +10,17 @@ import { NodeApiError } from 'n8n-workflow';
 
 declare function setTimeout(callback: () => void, ms: number): unknown;
 
+const USER_AGENT = 'n8n-nodes-agilix/0.3.0';
+
 // ── Session cache (shared across executions within the same worker) ──────────
 interface SessionInfo {
 	token: string;
 	expiration: number; // unix ms
+	domainId: string;
 }
 
 const sessionCache = new Map<string, SessionInfo>();
 
-// Tokens last ~15 min; refresh 2 min early
 const TOKEN_REFRESH_BUFFER_MS = 2 * 60 * 1000;
 
 function cacheKey(baseUrl: string, domain: string, username: string): string {
@@ -36,18 +38,19 @@ async function login(
 	const options: IRequestOptions = {
 		method: 'POST' as IHttpRequestMethods,
 		uri: `${baseUrl}/cmd`,
-		qs: { cmd: 'login2' },
 		body: {
 			request: {
-				cmd: 'login2',
+				cmd: 'login3',
 				username: `${domain}/${username}`,
 				password,
+				expireseconds: '3600',
 			},
 		},
 		json: true,
 		headers: {
 			'Content-Type': 'application/json',
 			Accept: 'application/json',
+			'User-Agent': USER_AGENT,
 		},
 	};
 
@@ -68,10 +71,13 @@ async function login(
 		});
 	}
 
+	const expirationMinutes = parseInt(resp.user?.authenticationexpirationminutes as string, 10) || 60;
+	const domainId = (resp.user?.domainid as string) || '';
+
 	const session: SessionInfo = {
 		token,
-		// Default 15-minute window
-		expiration: Date.now() + 15 * 60 * 1000,
+		expiration: Date.now() + expirationMinutes * 60 * 1000,
+		domainId,
 	};
 
 	sessionCache.set(cacheKey(baseUrl, domain, username), session);
@@ -82,22 +88,29 @@ async function extendSession(
 	ctx: IExecuteFunctions | ILoadOptionsFunctions,
 	baseUrl: string,
 	token: string,
-): Promise<void> {
+): Promise<number> {
 	const options: IRequestOptions = {
-		method: 'GET' as IHttpRequestMethods,
+		method: 'POST' as IHttpRequestMethods,
 		uri: `${baseUrl}/cmd`,
-		qs: { cmd: 'extendsession', _token: token },
+		qs: { _token: token },
+		body: {
+			request: { cmd: 'extendsession' },
+		},
 		json: true,
-		headers: { Accept: 'application/json' },
+		headers: {
+			'Content-Type': 'application/json',
+			Accept: 'application/json',
+			'User-Agent': USER_AGENT,
+		},
 	};
 
 	const response = await ctx.helpers.request(options);
 	const body = typeof response === 'string' ? JSON.parse(response) : response;
 	const resp = body?.response;
 	if (!resp || resp.code !== 'OK') {
-		// Session expired — caller should re-login
 		throw new Error('extend_session_failed');
 	}
+	return parseInt(resp.session?.authenticationexpirationminutes as string, 10) || 60;
 }
 
 async function getToken(
@@ -116,11 +129,10 @@ async function getToken(
 		return { token: session.token, baseUrl };
 	}
 
-	// Try extending
 	if (session) {
 		try {
-			await extendSession(ctx, baseUrl, session.token);
-			session.expiration = Date.now() + 15 * 60 * 1000;
+			const expirationMinutes = await extendSession(ctx, baseUrl, session.token);
+			session.expiration = Date.now() + expirationMinutes * 60 * 1000;
 			return { token: session.token, baseUrl };
 		} catch {
 			// Fall through to full login
@@ -131,14 +143,42 @@ async function getToken(
 	return { token: session.token, baseUrl };
 }
 
-// ── Rate-limit aware request helper ──────────────────────────────────────────
+function invalidateSession(ctx: IExecuteFunctions | ILoadOptionsFunctions): void {
+	ctx.getCredentials('agilixBuzzApi').then((creds) => {
+		const bUrl = ((creds.baseUrl as string) || 'https://api.agilixbuzz.com').replace(/\/+$/, '');
+		const key = cacheKey(bUrl, creds.domain as string, creds.username as string);
+		sessionCache.delete(key);
+	}).catch(() => {});
+}
+
+export async function getSessionDomainId(
+	ctx: IExecuteFunctions | ILoadOptionsFunctions,
+): Promise<string> {
+	await getToken(ctx);
+	const creds = await ctx.getCredentials('agilixBuzzApi');
+	const bUrl = ((creds.baseUrl as string) || 'https://api.agilixbuzz.com').replace(/\/+$/, '');
+	const key = cacheKey(bUrl, creds.domain as string, creds.username as string);
+	return sessionCache.get(key)?.domainId || '';
+}
+
+// ── Rate-limit & time-limit aware request helper ─────────────────────────────
 const MAX_RETRIES = 5;
 const INITIAL_BACKOFF_MS = 1000;
+const MAX_TIME_LIMIT_WAIT_MS = 180_000;
 
 async function sleep(ms: number): Promise<void> {
 	return new Promise<void>((resolve) => {
 		setTimeout(resolve, ms);
 	});
+}
+
+function parseTimeLimitDelay(message: string | undefined): number {
+	if (!message) return 30_000;
+	const match = String(message).match(/(\d+)ms over your limit/);
+	if (match) {
+		return parseInt(match[1], 10) + 2000;
+	}
+	return 30_000;
 }
 
 export async function agilixApiRequest(
@@ -161,6 +201,7 @@ export async function agilixApiRequest(
 			headers: {
 				'Content-Type': 'application/json',
 				Accept: 'application/json',
+				'User-Agent': USER_AGENT,
 			},
 		};
 
@@ -174,24 +215,28 @@ export async function agilixApiRequest(
 
 			const resp = parsed?.response;
 
-			// Handle auth failures — force re-login on next try
 			if (resp?.code === 'AccessDenied' || resp?.code === 'NotAuthenticated') {
-				const creds = await this.getCredentials('agilixBuzzApi');
-				const bUrl = ((creds.baseUrl as string) || 'https://api.agilixbuzz.com').replace(/\/+$/, '');
-				const key = cacheKey(bUrl, creds.domain as string, creds.username as string);
-				sessionCache.delete(key);
-
+				invalidateSession(this);
 				if (attempt < MAX_RETRIES) {
 					await sleep(INITIAL_BACKOFF_MS * Math.pow(2, attempt));
 					continue;
 				}
 			}
 
-			// Handle rate limiting (HTTP 429 or Buzz-specific throttle)
+			if (resp?.code === 'TimeLimit') {
+				const retryDelay = parseTimeLimitDelay(resp.message as string);
+				if (attempt < MAX_RETRIES && retryDelay <= MAX_TIME_LIMIT_WAIT_MS) {
+					await sleep(retryDelay);
+					continue;
+				}
+				throw new NodeApiError(this.getNode(), parsed as JsonObject, {
+					message: `Agilix API time limit exceeded (need to wait ~${Math.ceil(retryDelay / 1000)}s). ${resp.message || 'Please try again later.'}`,
+				});
+			}
+
 			if (resp?.code === 'TooManyRequests' || resp?.code === 'Throttled') {
 				if (attempt < MAX_RETRIES) {
-					const backoff = INITIAL_BACKOFF_MS * Math.pow(2, attempt);
-					await sleep(backoff);
+					await sleep(INITIAL_BACKOFF_MS * Math.pow(2, attempt));
 					continue;
 				}
 			}
@@ -206,13 +251,25 @@ export async function agilixApiRequest(
 		} catch (error) {
 			lastError = error as Error;
 
-			// Retry on network / transient errors
 			if (
 				attempt < MAX_RETRIES &&
 				(error as NodeApiError).httpCode &&
 				[429, 500, 502, 503, 504].includes(Number((error as NodeApiError).httpCode))
 			) {
-				const backoff = INITIAL_BACKOFF_MS * Math.pow(2, attempt);
+				let backoff = INITIAL_BACKOFF_MS * Math.pow(2, attempt);
+
+				if (Number((error as NodeApiError).httpCode) === 429) {
+					const errMsg = String((error as Error).message || '');
+					const timeLimitMatch = errMsg.match(/(\d+)ms over your limit/);
+					if (timeLimitMatch) {
+						const parsedDelay = parseInt(timeLimitMatch[1], 10) + 2000;
+						if (parsedDelay > MAX_TIME_LIMIT_WAIT_MS) {
+							throw error;
+						}
+						backoff = parsedDelay;
+					}
+				}
+
 				await sleep(backoff);
 				continue;
 			}
@@ -232,33 +289,40 @@ export async function agilixApiBulkRequest(
 	itemTag: string = 'item',
 	queryParams: IDataObject = {},
 ): Promise<IDataObject> {
-	const { token, baseUrl } = await getToken(this);
-
-	const requestBody: IDataObject = {
-		cmd,
-		[itemTag]: items.length === 1 ? items[0] : items,
-	};
-
-	const options: IRequestOptions = {
-		method: 'POST' as IHttpRequestMethods,
-		uri: `${baseUrl}/cmd`,
-		qs: { cmd, _token: token, ...queryParams },
-		body: { request: requestBody },
-		json: true,
-		headers: {
-			'Content-Type': 'application/json',
-			Accept: 'application/json',
-		},
-	};
-
 	let lastError: Error | undefined;
 
 	for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+		const { token, baseUrl } = await getToken(this);
+
+		const options: IRequestOptions = {
+			method: 'POST' as IHttpRequestMethods,
+			uri: `${baseUrl}/cmd`,
+			qs: { cmd, _token: token, ...queryParams },
+			body: { requests: { [itemTag]: items } },
+			json: true,
+			headers: {
+				'Content-Type': 'application/json',
+				Accept: 'application/json',
+				'User-Agent': USER_AGENT,
+			},
+		};
+
 		try {
 			const response = await this.helpers.request(options);
 			const parsed = typeof response === 'string' ? JSON.parse(response) : response;
 
 			const resp = parsed?.response;
+
+			if (resp?.code === 'TimeLimit') {
+				const retryDelay = parseTimeLimitDelay(resp.message as string);
+				if (attempt < MAX_RETRIES && retryDelay <= MAX_TIME_LIMIT_WAIT_MS) {
+					await sleep(retryDelay);
+					continue;
+				}
+				throw new NodeApiError(this.getNode(), parsed as JsonObject, {
+					message: `Agilix API time limit exceeded (need to wait ~${Math.ceil(retryDelay / 1000)}s). ${resp.message || 'Please try again later.'}`,
+				});
+			}
 
 			if (resp?.code === 'TooManyRequests' || resp?.code === 'Throttled') {
 				if (attempt < MAX_RETRIES) {
@@ -268,15 +332,7 @@ export async function agilixApiBulkRequest(
 			}
 
 			if (resp?.code === 'AccessDenied' || resp?.code === 'NotAuthenticated') {
-				const creds = await this.getCredentials('agilixBuzzApi');
-				const bUrl = ((creds.baseUrl as string) || 'https://api.agilixbuzz.com').replace(/\/+$/, '');
-				const key = cacheKey(bUrl, creds.domain as string, creds.username as string);
-				sessionCache.delete(key);
-
-				// Refresh token for retry
-				const freshToken = await getToken(this);
-				options.qs = { cmd, _token: freshToken.token, ...queryParams };
-
+				invalidateSession(this);
 				if (attempt < MAX_RETRIES) {
 					await sleep(INITIAL_BACKOFF_MS * Math.pow(2, attempt));
 					continue;
@@ -298,7 +354,21 @@ export async function agilixApiBulkRequest(
 				(error as NodeApiError).httpCode &&
 				[429, 500, 502, 503, 504].includes(Number((error as NodeApiError).httpCode))
 			) {
-				await sleep(INITIAL_BACKOFF_MS * Math.pow(2, attempt));
+				let backoff = INITIAL_BACKOFF_MS * Math.pow(2, attempt);
+
+				if (Number((error as NodeApiError).httpCode) === 429) {
+					const errMsg = String((error as Error).message || '');
+					const timeLimitMatch = errMsg.match(/(\d+)ms over your limit/);
+					if (timeLimitMatch) {
+						const parsedDelay = parseInt(timeLimitMatch[1], 10) + 2000;
+						if (parsedDelay > MAX_TIME_LIMIT_WAIT_MS) {
+							throw error;
+						}
+						backoff = parsedDelay;
+					}
+				}
+
+				await sleep(backoff);
 				continue;
 			}
 
@@ -309,50 +379,99 @@ export async function agilixApiBulkRequest(
 	throw lastError ?? new Error('Max retries exceeded');
 }
 
-// ── Paginated request helper ─────────────────────────────────────────────────
-export async function agilixApiRequestAllItems(
-	this: IExecuteFunctions,
-	method: IHttpRequestMethods,
+// ── Binary request helper (for file/zip downloads) ───────────────────────────
+export async function agilixApiRequestBinary(
+	this: IExecuteFunctions | ILoadOptionsFunctions,
 	cmd: string,
-	resultKey: string,
-	body: IDataObject = {},
 	qs: IDataObject = {},
-	limit?: number,
-): Promise<IDataObject[]> {
-	const allItems: IDataObject[] = [];
-	const pageSize = 100;
-	let show = 0;
+): Promise<{ body: Buffer; contentType: string; fileName: string }> {
+	let lastError: Error | undefined;
 
-	qs.limit = String(pageSize);
+	for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+		const { token, baseUrl } = await getToken(this);
 
-	do {
-		qs.show = String(show);
+		const options: IRequestOptions = {
+			method: 'GET' as IHttpRequestMethods,
+			uri: `${baseUrl}/cmd`,
+			qs: { cmd, _token: token, ...qs },
+			encoding: null,
+			resolveWithFullResponse: true,
+			json: false,
+			headers: {
+				'User-Agent': USER_AGENT,
+			},
+		};
 
-		const response = await agilixApiRequest.call(this, method, cmd, body, qs);
-		const resp = response.response as IDataObject;
+		try {
+			const response = await this.helpers.request(options);
+			const headers = response.headers || {};
+			const contentType = (headers['content-type'] as string) || 'application/octet-stream';
 
-		let items = resp?.[resultKey];
-		if (!items) break;
+			// If JSON came back, the API returned an error instead of binary data
+			if (contentType.includes('application/json')) {
+				const parsed = JSON.parse(response.body.toString());
+				const resp = parsed?.response;
 
-		if (!Array.isArray(items)) {
-			items = [items];
+				if (resp?.code === 'AccessDenied' || resp?.code === 'NotAuthenticated') {
+					invalidateSession(this);
+					if (attempt < MAX_RETRIES) {
+						await sleep(INITIAL_BACKOFF_MS * Math.pow(2, attempt));
+						continue;
+					}
+				}
+
+				if (resp?.code === 'TimeLimit') {
+					const retryDelay = parseTimeLimitDelay(resp.message as string);
+					if (attempt < MAX_RETRIES && retryDelay <= MAX_TIME_LIMIT_WAIT_MS) {
+						await sleep(retryDelay);
+						continue;
+					}
+				}
+
+				if (resp?.code === 'TooManyRequests' || resp?.code === 'Throttled') {
+					if (attempt < MAX_RETRIES) {
+						await sleep(INITIAL_BACKOFF_MS * Math.pow(2, attempt));
+						continue;
+					}
+				}
+
+				if (resp && resp.code !== 'OK') {
+					throw new NodeApiError(this.getNode(), parsed as JsonObject, {
+						message: `Agilix API error: ${resp.code} - ${resp.message || ''}`,
+					});
+				}
+			}
+
+			// Parse filename from Content-Disposition header
+			const disposition = (headers['content-disposition'] as string) || '';
+			let fileName = 'submission';
+			const filenameMatch = disposition.match(/filename[*]?=(?:UTF-8''|"?)([^";]+)/i);
+			if (filenameMatch) {
+				fileName = decodeURIComponent(filenameMatch[1].replace(/"/g, ''));
+			} else if (qs.packagetype === 'zip') {
+				fileName = 'submission.zip';
+			}
+
+			const body = Buffer.isBuffer(response.body)
+				? response.body
+				: Buffer.from(response.body);
+
+			return { body, contentType, fileName };
+		} catch (error) {
+			lastError = error as Error;
+
+			if (
+				attempt < MAX_RETRIES &&
+				(error as NodeApiError).httpCode &&
+				[429, 500, 502, 503, 504].includes(Number((error as NodeApiError).httpCode))
+			) {
+				await sleep(INITIAL_BACKOFF_MS * Math.pow(2, attempt));
+				continue;
+			}
+
+			throw error;
 		}
-
-		allItems.push(...(items as IDataObject[]));
-
-		// If we got fewer items than the page size, we've reached the end
-		if ((items as IDataObject[]).length < pageSize) break;
-
-		show += pageSize;
-
-		if (limit && allItems.length >= limit) {
-			return allItems.slice(0, limit);
-		}
-	} while (true);
-
-	if (limit) {
-		return allItems.slice(0, limit);
 	}
 
-	return allItems;
+	throw lastError ?? new Error('Max retries exceeded');
 }

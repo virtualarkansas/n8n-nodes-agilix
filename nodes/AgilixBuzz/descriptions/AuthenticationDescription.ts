@@ -113,16 +113,6 @@ export const authenticationFields: INodeProperties[] = [
 		displayOptions: { show: { resource: ['authentication'], operation: ['resetPassword'] } },
 	},
 
-	// ── Unproxy ───────────────────────────────────────────────────────────
-	{
-		displayName: 'User ID',
-		name: 'userid',
-		type: 'string',
-		required: true,
-		default: '',
-		displayOptions: { show: { resource: ['authentication'], operation: ['unproxy'] } },
-	},
-
 	// ── Update Password ───────────────────────────────────────────────────
 	{
 		displayName: 'User ID',

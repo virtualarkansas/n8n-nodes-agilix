@@ -7,4 +7,6 @@ export { reportOperations, reportFields } from './ReportDescription';
 export { resourceOperations, resourceFields } from './ResourceDescription';
 export { rightOperations, rightFields } from './RightDescription';
 export { generalOperations, generalFields } from './GeneralDescription';
-export { libraryOperations, libraryFields } from './LibraryDescription';
+export { gradebookOperations, gradebookFields } from './GradebookDescription';
+export { itemOperations, itemFields } from './ItemDescription';
+export { submissionOperations, submissionFields } from './SubmissionDescription';

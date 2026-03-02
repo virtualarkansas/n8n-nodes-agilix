@@ -32,7 +32,8 @@ export const reportFields: INodeProperties[] = [
 	{
 		displayName: 'Domain ID',
 		name: 'domainid',
-		type: 'string',
+		type: 'options',
+		typeOptions: { loadOptionsMethod: 'getDomains' },
 		required: true,
 		default: '',
 		displayOptions: { show: { resource: ['report'], operation: ['getReportList'] } },
